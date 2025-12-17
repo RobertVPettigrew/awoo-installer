@@ -99,8 +99,7 @@ jobs:
           ARTPATH=deploy/$ART
           SHA=$(sha256sum "$ARTPATH" | cut -d' ' -f1 || true)
           SIZE=$(stat -c%s "$ARTPATH" || true)
-          VERSION="dev-${{ github.run_id }}-${{ github.sha }}"
-          VERSION="${VERSION:0:20}"
+          VERSION="dev-${{ github.run_id }}-$(echo ${{ github.sha }} | cut -c1-8)"
           # create dev release path and manifest JSON
           mkdir -p gh_deploy/dev/${{ github.run_id }}
           cp "$ARTPATH" gh_deploy/dev/${{ github.run_id }}/"$ART"
@@ -118,7 +117,7 @@ jobs:
           echo "      \"url\":\"${DEV_URL}\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
           echo "      \"size_bytes\":${SIZE}," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
           echo "      \"sha256\":\"${SHA}\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo "      \"notes\":\"Dev build from branch copilot/fix-ci-workflow-issues, run ${{ github.run_id }}\"" >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo "      \"notes\":\"Dev build from branch ${{ github.ref_name }}, run ${{ github.run_id }}\"" >> gh_deploy/dev/${{ github.run_id }}/manifest.json
           echo '    }' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
           echo '  ]' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
           echo '}' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
