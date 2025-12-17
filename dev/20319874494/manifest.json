@@ -1,0 +1,16 @@
+{
+  "store_name":"Awoo CI Dev Store",
+  "generated_at":"2025-12-17T23:20:35Z",
+  "apps":[
+    {
+      "id":"awoo-installer",
+      "name":"Awoo Installer (dev)",
+      "version":"dev-20319874494-4da0d441",
+      "type":"nro",
+      "url":"https://RobertVPettigrew.github.io/RobertVPettigrew/awoo-installer/dev/20319874494/work.elf",
+      "size_bytes":45873136,
+      "sha256":"58cfeefb53890c9934f029a8fc0549bb91f5dd78e429cb73bdadf7ddf90989d6",
+      "notes":"Dev build from branch copilot/fix-ci-workflow-docker-command, run 20319874494"
+    }
+  ]
+}
