@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up QEMU/docker (optional)
         run: echo "Using devkitPro container for build step"
@@ -30,11 +32,10 @@ jobs:
         id: buildstep
         run: |
           docker run --rm -v "${{ github.workspace }}":/work -w /work devkitpro/devkitpro:latest \
-            bash -lc "set -e
-            apt-get update && apt-get install -y pkg-config libcurl4-openssl-dev libsdl2-dev libturbojpeg-dev libfreetype6-dev zlib1g-dev libjpeg-dev libwebp-dev libopus-dev libmpg123-dev libmodplug-dev libvorbis-dev libzstd-dev libmbedtls-dev \
-            && make clean || true \
-            && make -j$(nproc)
-            "
+            bash -lc "set -e && \
+            apt-get update && apt-get install -y pkg-config libcurl4-openssl-dev libsdl2-dev libturbojpeg-dev libfreetype6-dev zlib1g-dev libjpeg-dev libwebp-dev libopus-dev libmpg123-dev libmodplug-dev libvorbis-dev libzstd-dev libmbedtls-dev && \
+            make clean || true && \
+            make -j\$(nproc)"
       - name: Locate artifact
         id: package
         run: |
@@ -55,8 +56,15 @@ jobs:
             cp release_artifacts/*.zip . || true
           fi
           # If there are multiple artifacts, this picks one; adjust as needed
-          echo "::set-output name=artifact-path::release_artifacts/$ART"
-          echo "::set-output name=artifact-name::$ART"
+          echo "artifact-path=release_artifacts/$ART" >> $GITHUB_OUTPUT
+          echo "artifact-name=$ART" >> $GITHUB_OUTPUT
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: release_artifacts/
+          if-no-files-found: error
 
   publish_dev:
     needs: build
@@ -66,12 +74,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download built artifact from workspace
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: release_artifacts
+
+      - name: Prepare deployment
         run: |
           # Move the artifact from the build job's workspace path (we copied to release_artifacts/)
           ls -la
           mkdir -p deploy
-          cp -r release_artifacts/* deploy/ || true
+          cp -r release_artifacts/* deploy/
           # Use a deterministic artifact name if needed
           ls -la deploy
 
@@ -110,9 +124,9 @@ EOF
           # Update latest-dev.json at root of gh_deploy
           mkdir -p gh_deploy
           cp gh_deploy/dev/${{ github.run_id }}/manifest.json gh_deploy/latest-dev.json
-          echo "::set-output name=dev_url::${DEV_URL}"
-          echo "::set-output name=dev_sha::${SHA}"
-          echo "::set-output name=dev_name::${ART}"
+          echo "dev_url=${DEV_URL}" >> $GITHUB_OUTPUT
+          echo "dev_sha=${SHA}" >> $GITHUB_OUTPUT
+          echo "dev_name=${ART}" >> $GITHUB_OUTPUT
 
       - name: Publish to GitHub Pages (gh-pages)
         uses: peaceiris/actions-gh-pages@v4
@@ -129,11 +143,15 @@ EOF
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: release_artifacts
+
       - name: Prepare release artifact and compute hash
         id: prep
         run: |
-          mkdir -p release_artifacts
-          cp -r release_artifacts/* release_artifacts/ 2>/dev/null || true || true
           ART=$(ls release_artifacts | head -n1)
           ARTPATH=release_artifacts/$ART
           SHA=$(sha256sum "$ARTPATH" | cut -d' ' -f1)
@@ -164,9 +182,9 @@ EOF
 EOF
           # Update root latest.json with this release
           cp $RELEASE_DIR/manifest.json gh_deploy/latest.json
-          echo "::set-output name=release_art::${ART}"
-          echo "::set-output name=release_url::${REL_URL}"
-          echo "::set-output name=release_sha::${SHA}"
+          echo "release_art=${ART}" >> $GITHUB_OUTPUT
+          echo "release_url=${REL_URL}" >> $GITHUB_OUTPUT
+          echo "release_sha=${SHA}" >> $GITHUB_OUTPUT
 
       - name: Publish release artifacts and manifests to gh-pages
         uses: peaceiris/actions-gh-pages@v4
