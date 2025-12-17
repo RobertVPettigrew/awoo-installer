@@ -1,4 +1,4 @@
-name: Build & Publish (build 13 publish to gh-pages 13 release-on-tag)
+name: Build & Publish (build, publish to gh-pages, release-on-tag)
 
 on:
   push:
