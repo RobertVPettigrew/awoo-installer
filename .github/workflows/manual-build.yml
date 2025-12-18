@@ -1,65 +1,95 @@
-name: Manual Build & Artifact Upload
+name: Manual Build & Upload Artifact
 
 on:
   workflow_dispatch:
     inputs:
-      publish_to_gh_pages:
-        description: 'Publish to gh-pages under dev/'
+      publish:
+        description: 'Also publish to gh-pages (true/false)'
         required: false
-        type: boolean
-        default: false
+        default: 'false'
+      artifact_name:
+        description: 'Optional artifact name to force'
+        required: false
+        default: ''
 
 permissions:
-  contents: write        # needed to push to gh-pages
-  pages: write
-  id-token: write
+  contents: write
 
 jobs:
-  build:
+  build-and-upload:
     runs-on: ubuntu-latest
     outputs:
-      artifact-path: ${{ steps.package.outputs.artifact-path }}
       artifact-name: ${{ steps.package.outputs.artifact-name }}
+      artifact-path: ${{ steps.package.outputs.artifact-path }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Set up QEMU/docker (optional)
-        run: echo "Using devkitPro container for build step"
-
-      - name: Run build in devkitPro container
-        id: buildstep
+      - name: Build default target (produce .nro)
+        id: buildstep-nro
         run: |
           docker run --rm -v "${{ github.workspace }}":/work -w /work devkitpro/devkita64:latest \
             bash -lc "set -e && \
-            apt-get update && apt-get install -y pkg-config libcurl4-openssl-dev libsdl2-dev libturbojpeg-dev libfreetype6-dev zlib1g-dev libjpeg-dev libwebp-dev libopus-dev libmpg123-dev libmodplug-dev libvorbis-dev libzstd-dev libmbedtls-dev && \
+            apt-get update && apt-get install -y pkg-config libcurl4-openssl-dev libsdl2-dev libturbojpeg-dev libfreetype6-dev zlib1g-dev libjpeg-dev libwebp-dev libopus-dev libmpg123-dev libmodplug-dev || true && \
             make clean || true && \
             make -j\$(nproc)"
+
+      - name: Build NSP (if config.json exists)
+        id: buildstep-nsp
+        run: |
+          # If a config JSON is present at repo root, build an NSP using that JSON
+          if [ -f config.json ]; then
+            echo "config.json found, attempting NSP build..."
+            docker run --rm -v "${{ github.workspace }}":/work -w /work devkitpro/devkita64:latest \
+              bash -lc "set -e && \
+              apt-get update && apt-get install -y pkg-config libcurl4-openssl-dev libsdl2-dev libturbojpeg-dev libfreetype6-dev zlib1g-dev libjpeg-dev libwebp-dev libopus-dev libmpg123-dev libmodplug-dev || true && \
+              make clean || true && \
+              make APP_JSON=config.json -j\$(nproc) || true"
+          else
+            echo "config.json not found, skipping NSP build."
+          fi
 
       - name: Locate artifact
         id: package
         run: |
-          # Locate common build outputs (.nro, .elf, .nsp, .xci, .zip)
           mkdir -p release_artifacts
           ART=""
-          for f in *.nro *.elf *.nsp *.xci *.zip; do
+          # prefer explicit artifact name if passed
+          if [ -n "${{ github.event.inputs.artifact_name }}" ]; then
+            if [ -f "${{ github.event.inputs.artifact_name }}" ]; then
+              cp "${{ github.event.inputs.artifact_name }}" release_artifacts/
+              ART="${{ github.event.inputs.artifact_name }}"
+            fi
+          fi
+
+          # collect common output files, prefer .nsp and .nro
+          for f in *.nsp *.nro *.elf *.xci *.zip; do
             if [ -f "$f" ]; then
-              cp "$f" release_artifacts/
-              ART="$f"
+              cp -n "$f" release_artifacts/ || true
+              if [ -z "$ART" ]; then
+                ART="$f"
+              fi
             fi
           done
+
+          # fallback: include build directory
           if [ -z "$ART" ]; then
-            # Fallback: bundle build/ directory into a zip
             cp -r build release_artifacts/ 2>/dev/null || true
             zip -r release_artifacts/awoo-installer-build-${{ github.run_id }}.zip build || true
             ART="awoo-installer-build-${{ github.run_id }}.zip"
             cp release_artifacts/*.zip . || true
           fi
-          # If there are multiple artifacts, this picks one; adjust as needed
+
+          if [ -z "$ART" ]; then
+            echo "No artifact found" >&2
+            exit 1
+          fi
+
           echo "artifact-path=release_artifacts/$ART" >> $GITHUB_OUTPUT
           echo "artifact-name=$ART" >> $GITHUB_OUTPUT
+          ls -la release_artifacts || true
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -68,70 +98,10 @@ jobs:
           path: release_artifacts/
           if-no-files-found: error
 
-  publish_dev:
-    needs: build
-    runs-on: ubuntu-latest
-    if: inputs.publish_to_gh_pages == true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts
-          path: release_artifacts
-
-      - name: Prepare deployment
-        run: |
-          # Move the artifact from the build job's workspace path (we copied to release_artifacts/)
-          ls -la
-          mkdir -p deploy
-          cp -r release_artifacts/* deploy/
-          # Use a deterministic artifact name if needed
-          ls -la deploy
-
-      - name: Compute SHA256 and size, write dev manifest
-        id: manifest
-        run: |
-          set -e
-          mkdir -p deploy
-          ART=$(ls deploy | head -n1)
-          ARTPATH=deploy/$ART
-          SHA=$(sha256sum "$ARTPATH" | cut -d' ' -f1 || true)
-          SIZE=$(stat -c%s "$ARTPATH" || true)
-          VERSION="dev-${{ github.run_id }}-$(echo ${{ github.sha }} | cut -c1-8)"
-          # create dev release path and manifest JSON
-          mkdir -p gh_deploy/dev/${{ github.run_id }}
-          cp "$ARTPATH" gh_deploy/dev/${{ github.run_id }}/"$ART"
-          DEV_URL="https://$GITHUB_REPOSITORY_OWNER.github.io/${{ github.repository }}/dev/${{ github.run_id }}/$ART"
-          # Write manifest using echo to avoid heredoc issues
-          echo '{' > gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo '  "store_name":"Awoo CI Dev Store",' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo "  \"generated_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo '  "apps":[' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo '    {' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo '      "id":"awoo-installer",' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo '      "name":"Awoo Installer (dev)",' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo "      \"version\":\"${VERSION}\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo '      "type":"nro",' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo "      \"url\":\"${DEV_URL}\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo "      \"size_bytes\":${SIZE}," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo "      \"sha256\":\"${SHA}\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo "      \"notes\":\"Dev build from branch ${{ github.ref_name }}, run ${{ github.run_id }}\"" >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo '    }' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo '  ]' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo '}' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          # Update latest-dev.json at root of gh_deploy
-          mkdir -p gh_deploy
-          cp gh_deploy/dev/${{ github.run_id }}/manifest.json gh_deploy/latest-dev.json
-          echo "dev_url=${DEV_URL}" >> $GITHUB_OUTPUT
-          echo "dev_sha=${SHA}" >> $GITHUB_OUTPUT
-          echo "dev_name=${ART}" >> $GITHUB_OUTPUT
-
-      - name: Publish to GitHub Pages (gh-pages)
+      - name: Optional: publish to gh-pages
+        if: ${{ github.event.inputs.publish == 'true' }}
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./gh_deploy
-          destination_dir: ""   # root of gh-pages branch
+          publish_dir: ./release_artifacts
+          destination_dir: dev/${{ github.run_id }}

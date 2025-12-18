@@ -1,0 +1,8 @@
+{
+  "name": "Awoo Installer",
+  "titleid": "0100000000001000",
+  "version": "1.0.0",
+  "author": "RobertVPettigrew",
+  "icon": "icon.jpg",
+  "romfs": "romfs"
+}
