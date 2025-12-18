@@ -1,0 +1,44 @@
+name: Alpha Release
+
+on:
+  push:
+    tags:
+      - 'alpha-*'
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    name: Build and Publish Alpha Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup devkitPro (devkitPro/toolchain)
+        uses: devkitpro/setup-devkitpro@v1
+
+      - name: Build
+        run: |
+          set -e
+          make clean || true
+          make -j$(nproc)
+
+      - name: Collect release artifacts
+        run: |
+          mkdir -p release
+          # common output paths - adjust if your Makefile outputs elsewhere
+          if [ -f build/awoo-installer.nro ]; then cp build/awoo-installer.nro release/awoo-installer.nro; fi
+          if [ -f awoo-installer.nro ]; then cp awoo-installer.nro release/awoo-installer.nro; fi
+          # attempt to build an NSP if Makefile supports it (may require signing keys)
+          if make nsp || true; then
+            if [ -f build/awoo-installer.nsp ]; then cp build/awoo-installer.nsp release/awoo-installer.nsp; fi
+            if [ -f awoo-installer.nsp ]; then cp awoo-installer.nsp release/awoo-installer.nsp; fi
+          fi
+
+      - name: Create GitHub Release and upload assets
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          prerelease: true
+          files: release/*
