@@ -1,0 +1,16 @@
+{
+  "store_name":"Awoo CI Dev Store",
+  "generated_at":"2025-12-18T10:21:00Z",
+  "apps":[
+    {
+      "id":"awoo-installer",
+      "name":"Awoo Installer (dev)",
+      "version":"dev-20333628367-e5dd0bfa",
+      "type":"nro",
+      "url":"https://RobertVPettigrew.github.io/RobertVPettigrew/awoo-installer/dev/20333628367/work.elf",
+      "size_bytes":45873136,
+      "sha256":"58cfeefb53890c9934f029a8fc0549bb91f5dd78e429cb73bdadf7ddf90989d6",
+      "notes":"Dev build from branch master, run 20333628367"
+    }
+  ]
+}
