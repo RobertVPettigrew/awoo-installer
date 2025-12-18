@@ -34,7 +34,7 @@ jobs:
       - name: Run build in devkitPro container
         id: buildstep
         run: |
-          docker run --rm -v "${{ github.workspace }}":/work -w /work devkitpro/devkitpro:latest \
+          docker run --rm -v "${{ github.workspace }}":/work -w /work devkitpro/devkita64:latest \
             bash -lc "set -e && \
             apt-get update && apt-get install -y pkg-config libcurl4-openssl-dev libsdl2-dev libturbojpeg-dev libfreetype6-dev zlib1g-dev libjpeg-dev libwebp-dev libopus-dev libmpg123-dev libmodplug-dev libvorbis-dev libzstd-dev libmbedtls-dev && \
             make clean || true && \
