@@ -1,0 +1,40 @@
+name: CI Release
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    
+    - name: Set up environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential git curl zip
+    
+    - name: Build with Docker
+      run: |
+        docker run --rm \
+          -v ${{ github.workspace }}:/project \
+          -w /project \
+          devkitpro/devkita64:latest \
+          bash -c "make"
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: awoo-installer
+        path: |
+          *.nro
+          *.nsp
