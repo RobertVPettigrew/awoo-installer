@@ -104,7 +104,7 @@ jobs:
           # create dev release path and manifest JSON
           mkdir -p gh_deploy/dev/${{ github.run_id }}
           cp "$ARTPATH" gh_deploy/dev/${{ github.run_id }}/"$ART"
-          DEV_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/dev/${{ github.run_id }}/$ART"
+          DEV_URL="https://$GITHUB_REPOSITORY_OWNER.github.io/${{ github.repository }}/dev/${{ github.run_id }}/$ART"
           # Write manifest using echo to avoid heredoc issues
           echo '{' > gh_deploy/dev/${{ github.run_id }}/manifest.json
           echo '  "store_name":"Awoo CI Dev Store",' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
