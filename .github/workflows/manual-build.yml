@@ -118,7 +118,7 @@ jobs:
           echo "      \"url\":\"${DEV_URL}\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
           echo "      \"size_bytes\":${SIZE}," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
           echo "      \"sha256\":\"${SHA}\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
-          echo "      \"notes\":\"Manual build from branch ${{ github.ref_name }}, run ${{ github.run_id }}\"" >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo "      \"notes\":\"Dev build from branch ${{ github.ref_name }}, run ${{ github.run_id }}\"" >> gh_deploy/dev/${{ github.run_id }}/manifest.json
           echo '    }' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
           echo '  ]' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
           echo '}' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
