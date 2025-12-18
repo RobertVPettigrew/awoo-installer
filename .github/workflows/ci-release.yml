@@ -1,40 +1,204 @@
-name: CI Release
+name: Build & Publish (build, publish to gh-pages, release-on-tag)
 
 on:
   push:
     branches:
       - master
+    tags:
+      - 'v*'        # semantic tags like v1.2.3 will trigger release behavior
   pull_request:
     branches:
       - master
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed to push to gh-pages and create releases
+  pages: write
+  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+    outputs:
+      artifact-path: ${{ steps.package.outputs.artifact-path }}
+      artifact-name: ${{ steps.package.outputs.artifact-name }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-      with:
-        submodules: recursive
-    
-    - name: Set up environment
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential git curl zip
-    
-    - name: Build with Docker
-      run: |
-        docker run --rm \
-          -v ${{ github.workspace }}:/project \
-          -w /project \
-          devkitpro/devkita64:latest \
-          bash -c "make"
-    
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: awoo-installer
-        path: |
-          *.nro
-          *.nsp
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up QEMU/docker (optional)
+        run: echo "Using devkitPro container for build step"
+
+      - name: Run build in devkitPro container
+        id: buildstep
+        run: |
+          docker run --rm -v "${{ github.workspace }}":/work -w /work devkitpro/devkitpro:latest \
+            bash -lc "set -e && \
+            apt-get update && apt-get install -y pkg-config libcurl4-openssl-dev libsdl2-dev libturbojpeg-dev libfreetype6-dev zlib1g-dev libjpeg-dev libwebp-dev libopus-dev libmpg123-dev libmodplug-dev libvorbis-dev libzstd-dev libmbedtls-dev && \
+            make clean || true && \
+            make -j\$(nproc)"
+      - name: Locate artifact
+        id: package
+        run: |
+          # Adjust patterns below to match your actual outputs (.nro/.elf/.nsp/.zip)
+          mkdir -p release_artifacts
+          ART=""
+          for f in *.nro *.elf *.nsp *.xci *.zip; do
+            if [ -f "$f" ]; then
+              cp "$f" release_artifacts/
+              ART="$f"
+            fi
+          done
+          if [ -z "$ART" ]; then
+            # Fallback: include build/ directory
+            cp -r build release_artifacts/ 2>/dev/null || true
+            zip -r release_artifacts/awoo-installer-build-${{ github.run_id }}.zip build || true
+            ART="awoo-installer-build-${{ github.run_id }}.zip"
+            cp release_artifacts/*.zip . || true
+          fi
+          # If there are multiple artifacts, this picks one; adjust as needed
+          echo "artifact-path=release_artifacts/$ART" >> $GITHUB_OUTPUT
+          echo "artifact-name=$ART" >> $GITHUB_OUTPUT
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: release_artifacts/
+          if-no-files-found: error
+
+  publish_dev:
+    needs: build
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: release_artifacts
+
+      - name: Prepare deployment
+        run: |
+          # Move the artifact from the build job's workspace path (we copied to release_artifacts/)
+          ls -la
+          mkdir -p deploy
+          cp -r release_artifacts/* deploy/
+          # Use a deterministic artifact name if needed
+          ls -la deploy
+
+      - name: Compute SHA256 and size, write dev manifest
+        id: manifest
+        run: |
+          set -e
+          mkdir -p deploy
+          ART=$(ls deploy | head -n1)
+          ARTPATH=deploy/$ART
+          SHA=$(sha256sum "$ARTPATH" | cut -d' ' -f1 || true)
+          SIZE=$(stat -c%s "$ARTPATH" || true)
+          VERSION="dev-${{ github.run_id }}-$(echo ${{ github.sha }} | cut -c1-8)"
+          # create dev release path and manifest JSON
+          mkdir -p gh_deploy/dev/${{ github.run_id }}
+          cp "$ARTPATH" gh_deploy/dev/${{ github.run_id }}/"$ART"
+          DEV_URL="https://$GITHUB_REPOSITORY_OWNER.github.io/${{ github.repository }}/dev/${{ github.run_id }}/$ART"
+          # Write manifest using echo to avoid heredoc issues
+          echo '{' > gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo '  "store_name":"Awoo CI Dev Store",' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo "  \"generated_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo '  "apps":[' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo '    {' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo '      "id":"awoo-installer",' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo '      "name":"Awoo Installer (dev)",' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo "      \"version\":\"${VERSION}\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo '      "type":"nro",' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo "      \"url\":\"${DEV_URL}\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo "      \"size_bytes\":${SIZE}," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo "      \"sha256\":\"${SHA}\"," >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo "      \"notes\":\"Dev build from branch ${{ github.ref_name }}, run ${{ github.run_id }}\"" >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo '    }' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo '  ]' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          echo '}' >> gh_deploy/dev/${{ github.run_id }}/manifest.json
+          # Update latest-dev.json at root of gh_deploy
+          mkdir -p gh_deploy
+          cp gh_deploy/dev/${{ github.run_id }}/manifest.json gh_deploy/latest-dev.json
+          echo "dev_url=${DEV_URL}" >> $GITHUB_OUTPUT
+          echo "dev_sha=${SHA}" >> $GITHUB_OUTPUT
+          echo "dev_name=${ART}" >> $GITHUB_OUTPUT
+
+      - name: Publish to GitHub Pages (gh-pages)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh_deploy
+          destination_dir: ""   # root of gh-pages branch
+
+  release_on_tag:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: release_artifacts
+
+      - name: Prepare release artifact and compute hash
+        id: prep
+        run: |
+          ART=$(ls release_artifacts | head -n1)
+          ARTPATH=release_artifacts/$ART
+          SHA=$(sha256sum "$ARTPATH" | cut -d' ' -f1)
+          SIZE=$(stat -c%s "$ARTPATH")
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION="$TAG"
+          RELEASE_DIR=gh_deploy/releases/$TAG
+          mkdir -p $RELEASE_DIR
+          cp "$ARTPATH" "$RELEASE_DIR/$ART"
+          REL_URL="https://$GITHUB_REPOSITORY_OWNER.github.io/${{ github.repository }}/releases/$TAG/$ART"
+          # Write manifest using echo to avoid heredoc issues
+          echo '{' > $RELEASE_DIR/manifest.json
+          echo '  "store_name":"Awoo CI Releases",' >> $RELEASE_DIR/manifest.json
+          echo "  \"generated_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"," >> $RELEASE_DIR/manifest.json
+          echo '  "apps":[' >> $RELEASE_DIR/manifest.json
+          echo '    {' >> $RELEASE_DIR/manifest.json
+          echo '      "id":"awoo-installer",' >> $RELEASE_DIR/manifest.json
+          echo '      "name":"Awoo Installer",' >> $RELEASE_DIR/manifest.json
+          echo "      \"version\":\"${VERSION}\"," >> $RELEASE_DIR/manifest.json
+          echo '      "type":"nro",' >> $RELEASE_DIR/manifest.json
+          echo "      \"url\":\"${REL_URL}\"," >> $RELEASE_DIR/manifest.json
+          echo "      \"size_bytes\":${SIZE}," >> $RELEASE_DIR/manifest.json
+          echo "      \"sha256\":\"${SHA}\"," >> $RELEASE_DIR/manifest.json
+          echo "      \"notes\":\"Release created from tag ${TAG}\"" >> $RELEASE_DIR/manifest.json
+          echo '    }' >> $RELEASE_DIR/manifest.json
+          echo '  ]' >> $RELEASE_DIR/manifest.json
+          echo '}' >> $RELEASE_DIR/manifest.json
+          # Update root latest.json with this release
+          cp $RELEASE_DIR/manifest.json gh_deploy/latest.json
+          echo "release_art=${ART}" >> $GITHUB_OUTPUT
+          echo "release_url=${REL_URL}" >> $GITHUB_OUTPUT
+          echo "release_sha=${SHA}" >> $GITHUB_OUTPUT
+
+      - name: Publish release artifacts and manifests to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./gh_deploy
+          destination_dir: ""
+
+      - name: Create GitHub Release and upload asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          files: gh_deploy/releases/${{ github.ref_name }}/${{ steps.prep.outputs.release_art }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
