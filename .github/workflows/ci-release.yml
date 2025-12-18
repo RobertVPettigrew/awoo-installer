@@ -4,11 +4,13 @@ on:
   push:
     branches:
       - master
+      # Automated update: ensure release workflow triggers on 'master' (2025-12-18)
     tags:
       - 'v*'        # semantic tags like v1.2.3 will trigger release behavior
   pull_request:
     branches:
       - master
+      # Automated update: ensure release workflow triggers on 'master' (2025-12-18)
   workflow_dispatch:
 
 permissions:
