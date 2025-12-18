@@ -1,0 +1,31 @@
+{
+  "stores": [
+    {
+      "id": "default",
+      "name": "Default Homebrew Store (placeholder)",
+      "url": "https://example.com/manifest.json",
+      "icon_url": "https://example.com/icon.png",
+      "auth": { "type": "none" },
+      "priority": 0,
+      "enabled": true
+    }
+  ],
+  "sample_app": {
+    "id": "homebrew-retro",
+    "name": "RetroHomebrew",
+    "short_description": "Retro emulator",
+    "version": "1.0.0",
+    "author": "devname",
+    "type": "ncz",
+    "size_bytes": 12345678,
+    "uncompressed_size": 34567890,
+    "sha256": "abcdef...",
+    "inner_sha256": "012345...",
+    "url": "https://example.com/files/retro.ncz",
+    "icon_url": "https://example.com/icons/retro.png",
+    "screenshots": ["https://example.com/screens/1.png"],
+    "requires_firmware": "17.0.0",
+    "tags": ["emulator","homebrew"],
+    "updated_at": "2025-12-01T12:00:00Z"
+  }
+}
