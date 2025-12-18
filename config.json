@@ -11,6 +11,7 @@
   "process_category": 0,
   "is_retail": true,
   "pool_partition": 2,
+  "is_64_bit": true,
   "system_resource_size": "0x1FE000",
   "address_space_type": 3,
   "process_address_space": "AddressSpace64Bit",
