@@ -5,6 +5,7 @@ on:
     branches:
       - Feature/shopshoptest
       - copilot/fix-ci-workflow-issues  # temporary for testing
+      - copilot/fix-ci-workflow-docker-command  # temporary for testing docker fix
     tags:
       - 'v*'        # semantic tags like v1.2.3 will trigger release behavior
   workflow_dispatch:
@@ -32,11 +33,20 @@ jobs:
       - name: Run build in devkitPro container
         id: buildstep
         run: |
-          docker run --rm -v "${{ github.workspace }}":/work -w /work devkitpro/devkitpro:latest \
+          docker run --rm -v "${{ github.workspace }}":/work -w /work devkitpro/devkita64:latest \
             bash -lc "set -e && \
             apt-get update && apt-get install -y pkg-config libcurl4-openssl-dev libsdl2-dev libturbojpeg-dev libfreetype6-dev zlib1g-dev libjpeg-dev libwebp-dev libopus-dev libmpg123-dev libmodplug-dev libvorbis-dev libzstd-dev libmbedtls-dev && \
             make clean || true && \
             make -j\$(nproc)"
+      
+      - name: Debug - Show build artifacts
+        run: |
+          echo "=== Listing root directory ==="
+          ls -la
+          echo "=== Looking for .nro files ==="
+          find . -name "*.nro" -type f
+          echo "=== Looking for .elf files ==="
+          find . -name "*.elf" -type f
       - name: Locate artifact
         id: package
         run: |
@@ -70,7 +80,7 @@ jobs:
   publish_dev:
     needs: build
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' && (github.ref == 'refs/heads/Feature/shopshoptest' || github.ref == 'refs/heads/copilot/fix-ci-workflow-issues')) || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/Feature/shopshoptest' || github.ref == 'refs/heads/copilot/fix-ci-workflow-issues' || github.ref == 'refs/heads/copilot/fix-ci-workflow-docker-command')) || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
